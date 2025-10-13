@@ -18,9 +18,6 @@ const ParkingGame = () => {
     PLAYER_VISUAL_ROW: 5,
   };
 
-  //state machine diagram
-
-
   const UI_HEIGHT = 60;
   const CANVAS_WIDTH = GRID.cellWidth * GRID.cols;
   const CANVAS_HEIGHT = GRID.cellHeight * GRID.visibleRows + UI_HEIGHT;
@@ -63,6 +60,8 @@ const ParkingGame = () => {
   const animationRef = useRef(null);
   const lastFrameRef = useRef(0);
   const keysPressed = useRef(new Set());
+  const touchStartX = useRef(null);
+  const touchStartY = useRef(null);
 
   // Helper function to get level config (no dependencies, stable reference)
   const getLevelConfig = useCallback((level) => {
@@ -319,9 +318,6 @@ const ParkingGame = () => {
       ctx.font = "bold 20px monospace";
       ctx.fillText(`${levelConfig.numSpots} spot${levelConfig.numSpots > 1 ? 's' : ''} available`,
         CANVAS_WIDTH / 2 - 120, CANVAS_HEIGHT / 2 + 20);
-
-      ctx.font = "bold 18px monospace";
-      ctx.fillText("Press ENTER to start", CANVAS_WIDTH / 2 - 120, CANVAS_HEIGHT / 2 + 80);
     } else if (gameState.status === "CRASH") {
       sprites.crash(ctx, playerX, playerY);
 
@@ -331,9 +327,6 @@ const ParkingGame = () => {
       ctx.fillStyle = "#000";
       ctx.font = "bold 48px monospace";
       ctx.fillText("CRASH!", CANVAS_WIDTH / 2 - 90, CANVAS_HEIGHT / 2 - 40);
-
-      ctx.font = "bold 20px monospace";
-      ctx.fillText("Press ENTER to restart level", CANVAS_WIDTH / 2 - 180, CANVAS_HEIGHT / 2 + 40);
     } else if (gameState.status === "TIMEOUT") {
       ctx.fillStyle = "rgba(156, 160, 137, 0.8)";
       ctx.fillRect(0, UI_HEIGHT, CANVAS_WIDTH, CANVAS_HEIGHT - UI_HEIGHT);
@@ -341,9 +334,6 @@ const ParkingGame = () => {
       ctx.fillStyle = "#000";
       ctx.font = "bold 48px monospace";
       ctx.fillText("TIME'S UP!", CANVAS_WIDTH / 2 - 120, CANVAS_HEIGHT / 2 - 40);
-
-      ctx.font = "bold 20px monospace";
-      ctx.fillText("Press ENTER to restart level", CANVAS_WIDTH / 2 - 180, CANVAS_HEIGHT / 2 + 40);
     } else if (gameState.status === "SUCCESS") {
       ctx.fillStyle = "rgba(156, 160, 137, 0.9)";
       ctx.fillRect(0, UI_HEIGHT, CANVAS_WIDTH, CANVAS_HEIGHT - UI_HEIGHT);
@@ -355,9 +345,6 @@ const ParkingGame = () => {
       ctx.font = "bold 24px monospace";
       ctx.fillText(`+${gameState.score} points`, CANVAS_WIDTH / 2 - 100, CANVAS_HEIGHT / 2 - 20);
       ctx.fillText(`Total: ${gameState.totalScore}`, CANVAS_WIDTH / 2 - 90, CANVAS_HEIGHT / 2 + 20);
-
-      ctx.font = "bold 18px monospace";
-      ctx.fillText("Press ENTER for next level", CANVAS_WIDTH / 2 - 160, CANVAS_HEIGHT / 2 + 80);
     } else if (gameState.status === "GAME_OVER") {
       ctx.fillStyle = "rgba(156, 160, 137, 0.9)";
       ctx.fillRect(0, UI_HEIGHT, CANVAS_WIDTH, CANVAS_HEIGHT - UI_HEIGHT);
@@ -369,9 +356,6 @@ const ParkingGame = () => {
       ctx.font = "bold 24px monospace";
       ctx.fillText(`Level ${gameState.level} reached`, CANVAS_WIDTH / 2 - 120, CANVAS_HEIGHT / 2 - 20);
       ctx.fillText(`Final Score: ${gameState.totalScore}`, CANVAS_WIDTH / 2 - 130, CANVAS_HEIGHT / 2 + 20);
-
-      ctx.font = "bold 18px monospace";
-      ctx.fillText("Press ENTER to restart", CANVAS_WIDTH / 2 - 130, CANVAS_HEIGHT / 2 + 80);
     }
 
     // Controls (only show when playing)
@@ -382,26 +366,10 @@ const ParkingGame = () => {
     }
   }, [gameState, GRID, CANVAS_WIDTH, CANVAS_HEIGHT, UI_HEIGHT, SPEEDS, getLevelConfig]);
 
-  // Collision detection
-  const checkCollision = useCallback(() => {
-    if (
-      gameState.worldRow < 0 ||
-      gameState.worldRow >= gameState.streetData.length
-    ) {
-      return false;
-    }
-
-    const currentRow = gameState.streetData[gameState.worldRow];
-    const laneContent = currentRow.lanes[gameState.playerLane];
-
-    return laneContent === "car" || laneContent === "obstacle";
-  }, [gameState]);
-
   // Game update
   const update = useCallback(
     (deltaTime) => {
       if (gameState.status !== "PLAYING") return;
-      console.log("Updating game state", deltaTime, gameState);
 
       setGameState((prev) => {
         let newState = { ...prev };
@@ -626,6 +594,49 @@ const ParkingGame = () => {
     keysPressed.current.delete(e.key);
   }, []);
 
+  // Touch handlers for mobile
+  const handleTouchStart = useCallback((e) => {
+    const touch = e.touches[0];
+    touchStartX.current = touch.clientX;
+    touchStartY.current = touch.clientY;
+  }, []);
+
+  const handleTouchEnd = useCallback((e) => {
+    if (touchStartX.current === null || touchStartY.current === null) return;
+    if (gameState.status !== "PLAYING") return;
+
+    const touch = e.changedTouches[0];
+    const deltaX = touch.clientX - touchStartX.current;
+    const deltaY = touch.clientY - touchStartY.current;
+
+    // Detect horizontal swipe (left/right)
+    if (Math.abs(deltaX) > Math.abs(deltaY) && Math.abs(deltaX) > 50) {
+      if (deltaX > 0) {
+        // Swipe right
+        handleKeyDown({ key: "ArrowRight", preventDefault: () => {} });
+      } else {
+        // Swipe left
+        handleKeyDown({ key: "ArrowLeft", preventDefault: () => {} });
+      }
+    }
+
+    touchStartX.current = null;
+    touchStartY.current = null;
+  }, [gameState.status, handleKeyDown]);
+
+  // Button handlers
+  const handleSpeedUp = useCallback(() => {
+    handleKeyDown({ key: "ArrowUp", preventDefault: () => {} });
+  }, [handleKeyDown]);
+
+  const handleSpeedDown = useCallback(() => {
+    handleKeyDown({ key: "ArrowDown", preventDefault: () => {} });
+  }, [handleKeyDown]);
+
+  const handleEnterButton = useCallback(() => {
+    handleKeyDown({ key: "Enter", preventDefault: () => {} });
+  }, [handleKeyDown]);
+
   // Game loop
   useEffect(() => {
     const FPS = 60;
@@ -663,27 +674,66 @@ const ParkingGame = () => {
     };
   }, [handleKeyDown, handleKeyUp]);
 
+  // Button styles
+  const buttonStyle = {
+    padding: "15px 30px",
+    fontSize: "18px",
+    fontWeight: "bold",
+    fontFamily: "monospace",
+    border: "3px solid #000",
+    borderRadius: "10px",
+    background: "#A8AA94",
+    color: "#000",
+    cursor: "pointer",
+    touchAction: "manipulation",
+    userSelect: "none",
+    WebkitTapHighlightColor: "transparent",
+  };
+
+  const controlButtonStyle = {
+    width: "60px",
+    height: "60px",
+    fontSize: "24px",
+    fontWeight: "bold",
+    fontFamily: "monospace",
+    border: "3px solid #000",
+    borderRadius: "10px",
+    background: "#A8AA94",
+    color: "#000",
+    cursor: "pointer",
+    touchAction: "manipulation",
+    userSelect: "none",
+    WebkitTapHighlightColor: "transparent",
+    display: "flex",
+    justifyContent: "center",
+    alignItems: "center",
+  };
+
   return (
     <div
       style={{
         display: "flex",
+        flexDirection: "column",
         justifyContent: "center",
         alignItems: "center",
-        height: "100vh",
+        minHeight: "100vh",
         width: "100vw",
         overflow: "hidden",
         background: "#333",
         fontFamily: "monospace",
         margin: 0,
-        padding: 0,
+        padding: "10px",
+        boxSizing: "border-box",
+        gap: "10px",
       }}
     >
       <div
         style={{
-          padding: "20px",
           background: "#8B8D7A",
-          borderRadius: "20px",
-          boxShadow: "0 10px 40px rgba(0,0,0,0.5)",
+          borderRadius: "10px",
+          boxShadow: "0 5px 20px rgba(0,0,0,0.5)",
+          maxWidth: "100%",
+          maxHeight: "calc(100vh - 150px)",
         }}
       >
         <canvas
@@ -693,9 +743,65 @@ const ParkingGame = () => {
           style={{
             display: "block",
             borderRadius: "10px",
+            maxWidth: "100%",
+            height: "auto",
+            touchAction: "none",
           }}
+          onTouchStart={handleTouchStart}
+          onTouchEnd={handleTouchEnd}
         />
       </div>
+
+      {/* Menu button for non-playing states */}
+      {gameState.status !== "PLAYING" && (
+        <button
+          style={buttonStyle}
+          onClick={handleEnterButton}
+          onTouchEnd={(e) => {
+            e.preventDefault();
+            handleEnterButton();
+          }}
+        >
+          {gameState.status === "READY" && "START LEVEL"}
+          {gameState.status === "SUCCESS" && "NEXT LEVEL"}
+          {(gameState.status === "CRASH" || gameState.status === "TIMEOUT") && "RETRY"}
+          {gameState.status === "GAME_OVER" && "RESTART GAME"}
+        </button>
+      )}
+
+      {/* On-screen controls for mobile during gameplay */}
+      {gameState.status === "PLAYING" && (
+        <div style={{ display: "flex", gap: "15px", alignItems: "center", flexWrap: "wrap", justifyContent: "center" }}>
+          {/* Speed controls */}
+          <div style={{ display: "flex", flexDirection: "column", gap: "8px" }}>
+            <button
+              style={controlButtonStyle}
+              onTouchEnd={(e) => {
+                e.preventDefault();
+                handleSpeedUp();
+              }}
+              onClick={handleSpeedUp}
+            >
+              ↑
+            </button>
+            <button
+              style={controlButtonStyle}
+              onTouchEnd={(e) => {
+                e.preventDefault();
+                handleSpeedDown();
+              }}
+              onClick={handleSpeedDown}
+            >
+              ↓
+            </button>
+          </div>
+
+          {/* Swipe instruction */}
+          <div style={{ color: "#A8AA94", fontSize: "12px", maxWidth: "150px", textAlign: "center" }}>
+            Swipe left/right on canvas to steer
+          </div>
+        </div>
+      )}
     </div>
   );
 };
