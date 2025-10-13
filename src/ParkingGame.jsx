@@ -35,16 +35,27 @@ const ParkingGame = () => {
   };
   const SPEED_ORDER = ["REVERSE", "PARKED", "DRIVE", "FAST"];
 
-  // Game state
+  // Level configurations (defined once, outside of any dependency tracking)
+  const LEVEL_CONFIGS = [
+    { parkingSide: 'left', numSpots: 3, description: 'Park on the LEFT side' },
+    { parkingSide: 'right', numSpots: 2, description: 'Park on the RIGHT side' },
+    { parkingSide: 'both', numSpots: 3, description: 'Park on EITHER side' },
+    { parkingSide: 'left', numSpots: 2, description: 'Park on the LEFT side' },
+    { parkingSide: 'right', numSpots: 1, description: 'Find the ONE spot on the RIGHT' },
+  ];
+
+  // Game states: READY, PLAYING, SUCCESS, GAME_OVER
   const [gameState, setGameState] = useState({
     level: 1,
+    lives: 3,
     score: 0,
+    totalScore: 0,
     time: 60,
     currentSpeed: "DRIVE",
     playerLane: 2,
     worldRow: 1, // Start at row 1 (beginning of block)
     tickCounter: 0,
-    status: "PLAYING",
+    status: "READY", // State machine: READY -> PLAYING -> SUCCESS/GAME_OVER
     streetData: [],
   });
 
@@ -53,21 +64,17 @@ const ParkingGame = () => {
   const lastFrameRef = useRef(0);
   const keysPressed = useRef(new Set());
 
+  // Helper function to get level config (no dependencies, stable reference)
+  const getLevelConfig = useCallback((level) => {
+    return LEVEL_CONFIGS[(level - 1) % LEVEL_CONFIGS.length];
+  }, []);
+
   // Generate level
   const generateLevel = useCallback((level) => {
     const rows = [];
     const totalRows = LEVEL_LENGTH;
 
-    // Level configuration based on difficulty
-    const levelConfigs = [
-      { parkingSide: 'left', numSpots: 3 },    // Level 1: easy, left side only
-      { parkingSide: 'right', numSpots: 2 },   // Level 2: right side only
-      { parkingSide: 'both', numSpots: 3 },    // Level 3: both sides
-      { parkingSide: 'left', numSpots: 2 },    // Level 4: harder
-      { parkingSide: 'right', numSpots: 1 },   // Level 5: very hard
-    ];
-
-    const config = levelConfigs[(level - 1) % levelConfigs.length];
+    const config = getLevelConfig(level);
 
     // Step 1: Initialize all rows with cars in parking lanes
     for (let i = 0; i < totalRows; i++) {
@@ -136,7 +143,7 @@ const ParkingGame = () => {
     }
 
     return rows;
-  }, [LEVEL_LENGTH]);
+  }, [LEVEL_LENGTH, getLevelConfig]);
 
   // Initialize game
   useEffect(() => {
@@ -206,10 +213,11 @@ const ParkingGame = () => {
     ctx.fillRect(0, 0, CANVAS_WIDTH, UI_HEIGHT);
     ctx.fillStyle = "#000";
     ctx.font = "bold 18px monospace";
-    ctx.fillText(`SCORE: ${gameState.score}`, 20, 35);
-    ctx.fillText(`TIME: ${Math.ceil(gameState.time)}`, 200, 35);
+    ctx.fillText(`LVL: ${gameState.level}`, 20, 35);
+    ctx.fillText(`LIVES: ${gameState.lives}`, 120, 35);
+    ctx.fillText(`TIME: ${Math.ceil(gameState.time)}`, 250, 35);
     ctx.fillText(`SPEED: ${SPEEDS[gameState.currentSpeed].name}`, 360, 35);
-    ctx.fillText(`LEVEL: ${gameState.level}`, 540, 35);
+    ctx.fillText(`SCORE: ${gameState.totalScore}`, 480, 35);
 
     // Draw grid lines
     ctx.strokeStyle = "#000";
@@ -294,25 +302,85 @@ const ParkingGame = () => {
     const playerY = UI_HEIGHT + GRID.PLAYER_VISUAL_ROW * GRID.cellHeight;
     sprites.playerCar(ctx, playerX, playerY);
 
-    // Render crash if crashed
-    if (gameState.status === "CRASH") {
+    // Render game state overlays
+    if (gameState.status === "READY") {
+      // Semi-transparent overlay
+      ctx.fillStyle = "rgba(156, 160, 137, 0.9)";
+      ctx.fillRect(0, UI_HEIGHT, CANVAS_WIDTH, CANVAS_HEIGHT - UI_HEIGHT);
+
+      const levelConfig = getLevelConfig(gameState.level);
+      ctx.fillStyle = "#000";
+      ctx.font = "bold 48px monospace";
+      ctx.fillText(`LEVEL ${gameState.level}`, CANVAS_WIDTH / 2 - 120, CANVAS_HEIGHT / 2 - 80);
+
+      ctx.font = "bold 24px monospace";
+      ctx.fillText(levelConfig.description, CANVAS_WIDTH / 2 - 150, CANVAS_HEIGHT / 2 - 20);
+
+      ctx.font = "bold 20px monospace";
+      ctx.fillText(`${levelConfig.numSpots} spot${levelConfig.numSpots > 1 ? 's' : ''} available`,
+        CANVAS_WIDTH / 2 - 120, CANVAS_HEIGHT / 2 + 20);
+
+      ctx.font = "bold 18px monospace";
+      ctx.fillText("Press ENTER to start", CANVAS_WIDTH / 2 - 120, CANVAS_HEIGHT / 2 + 80);
+    } else if (gameState.status === "CRASH") {
       sprites.crash(ctx, playerX, playerY);
+
+      ctx.fillStyle = "rgba(156, 160, 137, 0.8)";
+      ctx.fillRect(0, UI_HEIGHT, CANVAS_WIDTH, CANVAS_HEIGHT - UI_HEIGHT);
+
       ctx.fillStyle = "#000";
-      ctx.font = "bold 36px monospace";
-      ctx.fillText("CRASH!", CANVAS_WIDTH / 2 - 70, CANVAS_HEIGHT / 2);
+      ctx.font = "bold 48px monospace";
+      ctx.fillText("CRASH!", CANVAS_WIDTH / 2 - 90, CANVAS_HEIGHT / 2 - 40);
+
+      ctx.font = "bold 20px monospace";
+      ctx.fillText("Press ENTER to restart level", CANVAS_WIDTH / 2 - 180, CANVAS_HEIGHT / 2 + 40);
+    } else if (gameState.status === "TIMEOUT") {
+      ctx.fillStyle = "rgba(156, 160, 137, 0.8)";
+      ctx.fillRect(0, UI_HEIGHT, CANVAS_WIDTH, CANVAS_HEIGHT - UI_HEIGHT);
+
+      ctx.fillStyle = "#000";
+      ctx.font = "bold 48px monospace";
+      ctx.fillText("TIME'S UP!", CANVAS_WIDTH / 2 - 120, CANVAS_HEIGHT / 2 - 40);
+
+      ctx.font = "bold 20px monospace";
+      ctx.fillText("Press ENTER to restart level", CANVAS_WIDTH / 2 - 180, CANVAS_HEIGHT / 2 + 40);
+    } else if (gameState.status === "SUCCESS") {
+      ctx.fillStyle = "rgba(156, 160, 137, 0.9)";
+      ctx.fillRect(0, UI_HEIGHT, CANVAS_WIDTH, CANVAS_HEIGHT - UI_HEIGHT);
+
+      ctx.fillStyle = "#000";
+      ctx.font = "bold 48px monospace";
+      ctx.fillText("SUCCESS!", CANVAS_WIDTH / 2 - 120, CANVAS_HEIGHT / 2 - 80);
+
+      ctx.font = "bold 24px monospace";
+      ctx.fillText(`+${gameState.score} points`, CANVAS_WIDTH / 2 - 100, CANVAS_HEIGHT / 2 - 20);
+      ctx.fillText(`Total: ${gameState.totalScore}`, CANVAS_WIDTH / 2 - 90, CANVAS_HEIGHT / 2 + 20);
+
+      ctx.font = "bold 18px monospace";
+      ctx.fillText("Press ENTER for next level", CANVAS_WIDTH / 2 - 160, CANVAS_HEIGHT / 2 + 80);
+    } else if (gameState.status === "GAME_OVER") {
+      ctx.fillStyle = "rgba(156, 160, 137, 0.9)";
+      ctx.fillRect(0, UI_HEIGHT, CANVAS_WIDTH, CANVAS_HEIGHT - UI_HEIGHT);
+
+      ctx.fillStyle = "#000";
+      ctx.font = "bold 48px monospace";
+      ctx.fillText("GAME OVER", CANVAS_WIDTH / 2 - 140, CANVAS_HEIGHT / 2 - 80);
+
+      ctx.font = "bold 24px monospace";
+      ctx.fillText(`Level ${gameState.level} reached`, CANVAS_WIDTH / 2 - 120, CANVAS_HEIGHT / 2 - 20);
+      ctx.fillText(`Final Score: ${gameState.totalScore}`, CANVAS_WIDTH / 2 - 130, CANVAS_HEIGHT / 2 + 20);
+
+      ctx.font = "bold 18px monospace";
+      ctx.fillText("Press ENTER to restart", CANVAS_WIDTH / 2 - 130, CANVAS_HEIGHT / 2 + 80);
     }
 
-    if (gameState.status === "SUCCESS") {
+    // Controls (only show when playing)
+    if (gameState.status === "PLAYING") {
       ctx.fillStyle = "#000";
-      ctx.font = "bold 36px monospace";
-      ctx.fillText("SUCCESS!", CANVAS_WIDTH / 2 - 90, CANVAS_HEIGHT / 2);
+      ctx.font = "bold 12px monospace";
+      ctx.fillText("↑↓ SPEED  ←→ LANE/PARK", 20, CANVAS_HEIGHT - 10);
     }
-
-    // Controls
-    ctx.fillStyle = "#000";
-    ctx.font = "bold 12px monospace";
-    ctx.fillText("↑↓ SPEED  ←→ LANE/PARK", 20, CANVAS_HEIGHT - 10);
-  }, [gameState, GRID, CANVAS_WIDTH, CANVAS_HEIGHT, UI_HEIGHT, SPEEDS]);
+  }, [gameState, GRID, CANVAS_WIDTH, CANVAS_HEIGHT, UI_HEIGHT, SPEEDS, getLevelConfig]);
 
   // Collision detection
   const checkCollision = useCallback(() => {
@@ -380,23 +448,79 @@ const ParkingGame = () => {
   // Handle input
   const handleKeyDown = useCallback(
     (e) => {
-      if (gameState.status !== "PLAYING") {
-        if (e.key === "Enter") {
-          // Restart
+      // Prevent default behavior for arrow keys and Enter
+      if (["ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight", "Enter"].includes(e.key)) {
+        e.preventDefault();
+      }
+
+      // Handle state transitions
+      if (e.key === "Enter") {
+        if (gameState.status === "READY") {
+          // Start level
           setGameState((prev) => ({
             ...prev,
+            status: "PLAYING",
+            currentSpeed: "DRIVE",
+            playerLane: 2,
+            worldRow: 1,
+            tickCounter: 0,
+            time: 60,
+          }));
+          return;
+        } else if (gameState.status === "SUCCESS") {
+          // Advance to next level
+          setGameState((prev) => ({
+            ...prev,
+            level: prev.level + 1,
             score: 0,
+            totalScore: prev.totalScore + prev.score,
+            status: "READY",
+            streetData: generateLevel(prev.level + 1),
+          }));
+          return;
+        } else if (gameState.status === "CRASH" || gameState.status === "TIMEOUT") {
+          // Lose a life and check if game over
+          setGameState((prev) => {
+            const newLives = prev.lives - 1;
+            if (newLives <= 0) {
+              // Game over
+              return {
+                ...prev,
+                lives: 0,
+                status: "GAME_OVER",
+              };
+            } else {
+              // Restart current level with one less life
+              return {
+                ...prev,
+                lives: newLives,
+                status: "READY",
+                streetData: generateLevel(prev.level),
+              };
+            }
+          });
+          return;
+        } else if (gameState.status === "GAME_OVER") {
+          // Restart entire game
+          setGameState({
+            level: 1,
+            lives: 3,
+            score: 0,
+            totalScore: 0,
             time: 60,
             currentSpeed: "DRIVE",
             playerLane: 2,
             worldRow: 1,
             tickCounter: 0,
-            status: "PLAYING",
-            streetData: generateLevel(prev.level),
-          }));
+            status: "READY",
+            streetData: generateLevel(1),
+          });
+          return;
         }
-        return;
       }
+
+      // Game controls only work when PLAYING
+      if (gameState.status !== "PLAYING") return;
 
       if (keysPressed.current.has(e.key)) return;
       keysPressed.current.add(e.key);
@@ -412,13 +536,13 @@ const ParkingGame = () => {
               // In left parking column
               if (currentRow && currentRow.leftParking === "spot") {
                 state.status = "SUCCESS";
-                state.score += 1000;
+                state.score = Math.ceil(state.time) * 10;
               }
             } else if (state.playerLane === 4) {
               // In right parking column
               if (currentRow && currentRow.rightParking === "spot") {
                 state.status = "SUCCESS";
-                state.score += 1000;
+                state.score = Math.ceil(state.time) * 10;
               }
             }
           }
@@ -545,9 +669,13 @@ const ParkingGame = () => {
         display: "flex",
         justifyContent: "center",
         alignItems: "center",
-        minHeight: "100vh",
+        height: "100vh",
+        width: "100vw",
+        overflow: "hidden",
         background: "#333",
         fontFamily: "monospace",
+        margin: 0,
+        padding: 0,
       }}
     >
       <div
