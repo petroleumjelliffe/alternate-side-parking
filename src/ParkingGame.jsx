@@ -626,34 +626,47 @@ const ParkingGame = () => {
 
   // Button handlers
   const handleGearShift = useCallback((targetGear) => {
-    if (gameState.status !== "PLAYING") return;
+    // Directly set the gear instead of simulating key presses
+    setGameState((prev) => {
+      if (prev.status !== "PLAYING") return prev;
 
-    const currentIndex = SPEED_ORDER.indexOf(gameState.currentSpeed);
-    const targetIndex = SPEED_ORDER.indexOf(targetGear);
+      const newState = { ...prev, currentSpeed: targetGear };
 
-    if (targetIndex > currentIndex) {
-      // Need to shift up
-      for (let i = 0; i < (targetIndex - currentIndex); i++) {
-        handleKeyDown({ key: "ArrowUp", preventDefault: () => {} });
+      // Check if shifting to PARKED while in a parking spot
+      if (targetGear === "PARKED") {
+        const currentRow = prev.streetData[prev.worldRow];
+        if (prev.playerLane === -1) {
+          // In left parking column
+          if (currentRow && currentRow.leftParking === "spot") {
+            newState.status = "SUCCESS";
+            newState.score = Math.ceil(prev.time) * 10;
+          }
+        } else if (prev.playerLane === 4) {
+          // In right parking column
+          if (currentRow && currentRow.rightParking === "spot") {
+            newState.status = "SUCCESS";
+            newState.score = Math.ceil(prev.time) * 10;
+          }
+        }
       }
-    } else if (targetIndex < currentIndex) {
-      // Need to shift down
-      for (let i = 0; i < (currentIndex - targetIndex); i++) {
-        handleKeyDown({ key: "ArrowDown", preventDefault: () => {} });
-      }
-    }
-  }, [gameState.status, gameState.currentSpeed, handleKeyDown, SPEED_ORDER]);
+
+      return newState;
+    });
+  }, []);
 
   const handleLaneLeft = useCallback(() => {
-    handleKeyDown({ key: "ArrowLeft", preventDefault: () => {} });
+    const event = { key: "ArrowLeft", preventDefault: () => {} };
+    handleKeyDown(event);
   }, [handleKeyDown]);
 
   const handleLaneRight = useCallback(() => {
-    handleKeyDown({ key: "ArrowRight", preventDefault: () => {} });
+    const event = { key: "ArrowRight", preventDefault: () => {} };
+    handleKeyDown(event);
   }, [handleKeyDown]);
 
   const handleEnterButton = useCallback(() => {
-    handleKeyDown({ key: "Enter", preventDefault: () => {} });
+    const event = { key: "Enter", preventDefault: () => {} };
+    handleKeyDown(event);
   }, [handleKeyDown]);
 
   // Game loop
