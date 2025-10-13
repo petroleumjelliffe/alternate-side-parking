@@ -625,12 +625,31 @@ const ParkingGame = () => {
   }, [gameState.status, handleKeyDown]);
 
   // Button handlers
-  const handleSpeedUp = useCallback(() => {
-    handleKeyDown({ key: "ArrowUp", preventDefault: () => {} });
+  const handleGearShift = useCallback((targetGear) => {
+    if (gameState.status !== "PLAYING") return;
+
+    const currentIndex = SPEED_ORDER.indexOf(gameState.currentSpeed);
+    const targetIndex = SPEED_ORDER.indexOf(targetGear);
+
+    if (targetIndex > currentIndex) {
+      // Need to shift up
+      for (let i = 0; i < (targetIndex - currentIndex); i++) {
+        handleKeyDown({ key: "ArrowUp", preventDefault: () => {} });
+      }
+    } else if (targetIndex < currentIndex) {
+      // Need to shift down
+      for (let i = 0; i < (currentIndex - targetIndex); i++) {
+        handleKeyDown({ key: "ArrowDown", preventDefault: () => {} });
+      }
+    }
+  }, [gameState.status, gameState.currentSpeed, handleKeyDown, SPEED_ORDER]);
+
+  const handleLaneLeft = useCallback(() => {
+    handleKeyDown({ key: "ArrowLeft", preventDefault: () => {} });
   }, [handleKeyDown]);
 
-  const handleSpeedDown = useCallback(() => {
-    handleKeyDown({ key: "ArrowDown", preventDefault: () => {} });
+  const handleLaneRight = useCallback(() => {
+    handleKeyDown({ key: "ArrowRight", preventDefault: () => {} });
   }, [handleKeyDown]);
 
   const handleEnterButton = useCallback(() => {
@@ -771,35 +790,64 @@ const ParkingGame = () => {
 
       {/* On-screen controls for mobile during gameplay */}
       {gameState.status === "PLAYING" && (
-        <div style={{ display: "flex", gap: "15px", alignItems: "center", flexWrap: "wrap", justifyContent: "center" }}>
-          {/* Speed controls */}
-          <div style={{ display: "flex", flexDirection: "column", gap: "8px" }}>
-            <button
-              style={controlButtonStyle}
-              onTouchEnd={(e) => {
-                e.preventDefault();
-                handleSpeedUp();
-              }}
-              onClick={handleSpeedUp}
-            >
-              ↑
-            </button>
-            <button
-              style={controlButtonStyle}
-              onTouchEnd={(e) => {
-                e.preventDefault();
-                handleSpeedDown();
-              }}
-              onClick={handleSpeedDown}
-            >
-              ↓
-            </button>
+        <div style={{ display: "flex", gap: "20px", alignItems: "center", flexWrap: "wrap", justifyContent: "center" }}>
+          {/* Lane change buttons */}
+          <button
+            style={{...controlButtonStyle, fontSize: "28px"}}
+            onTouchEnd={(e) => {
+              e.preventDefault();
+              handleLaneLeft();
+            }}
+            onClick={handleLaneLeft}
+          >
+            ←
+          </button>
+
+          {/* Gear selector - vertical like automatic transmission */}
+          <div style={{
+            display: "flex",
+            flexDirection: "column",
+            gap: "5px",
+            background: "#6B6D5A",
+            padding: "10px",
+            borderRadius: "15px",
+            border: "3px solid #000"
+          }}>
+            {["FAST", "DRIVE", "PARKED", "REVERSE"].map((gear) => {
+              const isActive = gameState.currentSpeed === gear;
+              return (
+                <button
+                  key={gear}
+                  style={{
+                    ...controlButtonStyle,
+                    background: isActive ? "#FFF" : "#A8AA94",
+                    color: "#000",
+                    fontWeight: isActive ? "bold" : "normal",
+                    border: isActive ? "3px solid #000" : "2px solid #000",
+                  }}
+                  onTouchEnd={(e) => {
+                    e.preventDefault();
+                    handleGearShift(gear);
+                  }}
+                  onClick={() => handleGearShift(gear)}
+                >
+                  {SPEEDS[gear].name}
+                </button>
+              );
+            })}
           </div>
 
-          {/* Swipe instruction */}
-          <div style={{ color: "#A8AA94", fontSize: "12px", maxWidth: "150px", textAlign: "center" }}>
-            Swipe left/right on canvas to steer
-          </div>
+          {/* Lane change buttons */}
+          <button
+            style={{...controlButtonStyle, fontSize: "28px"}}
+            onTouchEnd={(e) => {
+              e.preventDefault();
+              handleLaneRight();
+            }}
+            onClick={handleLaneRight}
+          >
+            →
+          </button>
         </div>
       )}
     </div>
