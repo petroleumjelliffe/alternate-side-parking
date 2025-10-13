@@ -613,10 +613,14 @@ const ParkingGame = () => {
     if (Math.abs(deltaX) > Math.abs(deltaY) && Math.abs(deltaX) > 50) {
       if (deltaX > 0) {
         // Swipe right
-        handleKeyDown({ key: "ArrowRight", preventDefault: () => {} });
+        const event = { key: "ArrowRight", preventDefault: () => {}, _fromButton: true };
+        handleKeyDown(event);
+        setTimeout(() => keysPressed.current.delete("ArrowRight"), 0);
       } else {
         // Swipe left
-        handleKeyDown({ key: "ArrowLeft", preventDefault: () => {} });
+        const event = { key: "ArrowLeft", preventDefault: () => {}, _fromButton: true };
+        handleKeyDown(event);
+        setTimeout(() => keysPressed.current.delete("ArrowLeft"), 0);
       }
     }
 
@@ -624,12 +628,16 @@ const ParkingGame = () => {
     touchStartY.current = null;
   }, [gameState.status, handleKeyDown]);
 
-  // Button handlers
-  const handleGearShift = useCallback((targetGear) => {
+  // Button handlers - using useCallback to ensure stable references
+  const handleGearShift = (targetGear) => {
     // Directly set the gear instead of simulating key presses
     setGameState((prev) => {
-      if (prev.status !== "PLAYING") return prev;
+      if (prev.status !== "PLAYING") {
+        console.log("Gear shift ignored - not playing", prev.status);
+        return prev;
+      }
 
+      console.log("Shifting gear from", prev.currentSpeed, "to", targetGear);
       const newState = { ...prev, currentSpeed: targetGear };
 
       // Check if shifting to PARKED while in a parking spot
@@ -652,22 +660,30 @@ const ParkingGame = () => {
 
       return newState;
     });
-  }, []);
+  };
 
-  const handleLaneLeft = useCallback(() => {
-    const event = { key: "ArrowLeft", preventDefault: () => {} };
+  const handleLaneLeft = () => {
+    console.log("Lane left button pressed");
+    // Create a synthetic event that won't get stuck in keysPressed
+    const event = { key: "ArrowLeft", preventDefault: () => {}, _fromButton: true };
     handleKeyDown(event);
-  }, [handleKeyDown]);
+    // Immediately remove from keysPressed since it's a button click
+    setTimeout(() => keysPressed.current.delete("ArrowLeft"), 0);
+  };
 
-  const handleLaneRight = useCallback(() => {
-    const event = { key: "ArrowRight", preventDefault: () => {} };
+  const handleLaneRight = () => {
+    console.log("Lane right button pressed");
+    const event = { key: "ArrowRight", preventDefault: () => {}, _fromButton: true };
     handleKeyDown(event);
-  }, [handleKeyDown]);
+    setTimeout(() => keysPressed.current.delete("ArrowRight"), 0);
+  };
 
-  const handleEnterButton = useCallback(() => {
-    const event = { key: "Enter", preventDefault: () => {} };
+  const handleEnterButton = () => {
+    console.log("Enter button pressed, current status:", gameState.status);
+    const event = { key: "Enter", preventDefault: () => {}, _fromButton: true };
     handleKeyDown(event);
-  }, [handleKeyDown]);
+    setTimeout(() => keysPressed.current.delete("Enter"), 0);
+  };
 
   // Game loop
   useEffect(() => {
