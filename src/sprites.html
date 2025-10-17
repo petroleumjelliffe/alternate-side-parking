@@ -1,0 +1,648 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <title>Rear-View Vehicle Generator (HTML5 Canvas)</title>
+    <style>
+      :root {
+        --bg: #0b0d10;
+        --fg: #e8eef7;
+        --muted: #9fb0c3;
+        --accent: #46a0ff;
+      }
+      html,
+      body {
+        height: 100%;
+      }
+      body {
+        margin: 0;
+        background: var(--bg);
+        color: var(--fg);
+        font: 14px/1.2 system-ui, -apple-system, Segoe UI, Roboto, Arial,
+          sans-serif;
+        display: grid;
+        grid-template-rows: auto 1fr;
+        gap: 12px;
+      }
+      header {
+        padding: 12px 16px;
+        border-bottom: 1px solid #1a222b;
+      }
+      h1 {
+        font-size: 16px;
+        margin: 0 0 8px;
+      }
+      .controls {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 8px 16px;
+        align-items: flex-end;
+      }
+      .controls label {
+        display: flex;
+        flex-direction: column;
+        gap: 4px;
+        font-size: 12px;
+        color: var(--muted);
+      }
+      .controls input[type="number"],
+      .controls input[type="text"] {
+        background: #0f1318;
+        color: var(--fg);
+        border: 1px solid #26303b;
+        border-radius: 6px;
+        padding: 6px 8px;
+        width: 96px;
+      }
+      .types {
+        display: flex;
+        gap: 10px;
+        align-items: center;
+        color: var(--muted);
+        font-size: 13px;
+      }
+      button {
+        background: var(--accent);
+        color: #001629;
+        border: 0;
+        border-radius: 8px;
+        padding: 8px 12px;
+        font-weight: 600;
+        cursor: pointer;
+      }
+      button.secondary {
+        background: #18202a;
+        color: var(--fg);
+        border: 1px solid #2e3b49;
+      }
+      main {
+        display: grid;
+        grid-template-columns: 340px 1fr;
+        gap: 12px;
+        padding: 0 16px 16px;
+        min-height: 0;
+      }
+      .panel {
+        border: 1px solid #1a222b;
+        border-radius: 10px;
+        padding: 12px;
+        background: #0f1318;
+        min-height: 0;
+        display: flex;
+        flex-direction: column;
+        gap: 10px;
+      }
+      .panel h2 {
+        font-size: 13px;
+        margin: 0;
+        color: var(--muted);
+        font-weight: 600;
+        letter-spacing: 0.02em;
+      }
+      .sheet-wrap {
+        display: grid;
+        place-items: center;
+        background: #0b0f14;
+        border-radius: 10px;
+        overflow: auto;
+        min-height: 300px;
+      }
+      canvas {
+        image-rendering: pixelated;
+        image-rendering: crisp-edges;
+      }
+      .meta {
+        white-space: pre-wrap;
+        max-height: 260px;
+        overflow: auto;
+        background: #0b0f14;
+        padding: 10px;
+        border-radius: 8px;
+        font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+        font-size: 12px;
+        color: #cfe3fe;
+      }
+      .row {
+        display: flex;
+        gap: 8px;
+        flex-wrap: wrap;
+      }
+      .hint {
+        color: #7b8ea5;
+        font-size: 12px;
+      }
+      .spacer {
+        flex: 1;
+      }
+    </style>
+  </head>
+  <body>
+    <header>
+      <h1>Rear-View Vehicle Generator (Cars & Trucks)</h1>
+      <div class="controls">
+        <label
+          >Count
+          <input id="count" type="number" min="1" max="256" value="24" />
+        </label>
+        <label
+          >Scale
+          <input id="scale" type="number" min="1" max="8" value="3" />
+        </label>
+        <label
+          >Seed
+          <input id="seed" type="text" value="2025" />
+        </label>
+        <div class="types">
+          Types:
+          <label
+            ><input type="checkbox" class="type" value="car" checked />
+            car</label
+          >
+          <label
+            ><input type="checkbox" class="type" value="pickup" checked />
+            pickup</label
+          >
+          <label
+            ><input type="checkbox" class="type" value="van" checked />
+            van</label
+          >
+          <label
+            ><input type="checkbox" class="type" value="box_truck" checked />
+            box_truck</label
+          >
+        </div>
+        <div class="spacer"></div>
+        <button id="generate">Generate</button>
+        <button id="dlSheet" class="secondary">Download Sprite Sheet</button>
+        <button id="dlMeta" class="secondary">Download Metadata</button>
+      </div>
+    </header>
+
+    <main>
+      <div class="panel">
+        <h2>Sprite Sheet</h2>
+        <div class="sheet-wrap">
+          <canvas id="sheet" width="84" height="84"></canvas>
+        </div>
+        <div class="hint">
+          Tip: Toggle types, tweak scale/seed, then “Generate”. “Download” saves
+          the sheet PNG & matching metadata JSON.
+        </div>
+      </div>
+      <div class="panel">
+        <h2>Metadata preview</h2>
+        <div id="meta" class="meta"></div>
+      </div>
+    </main>
+
+    <script>
+      /* ---------- Seeded RNG (Mulberry32) ---------- */
+      function mulberry32(a) {
+        return function () {
+          let t = (a += 0x6d2b79f5);
+          t = Math.imul(t ^ (t >>> 15), t | 1);
+          t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
+          return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+        };
+      }
+      function seeded(seedStr) {
+        // simple hash of seed string → 32-bit
+        let h = 2166136261 >>> 0;
+        for (let i = 0; i < seedStr.length; i++) {
+          h ^= seedStr.charCodeAt(i);
+          h = Math.imul(h, 16777619);
+        }
+        return mulberry32(h >>> 0);
+      }
+      function rInt(rng, a, b) {
+        return Math.floor(rng() * (b - a + 1)) + a;
+      }
+      function pick(rng, arr) {
+        return arr[Math.floor(rng() * arr.length)];
+      }
+
+      /* ---------- Pixel helpers ---------- */
+      function drawRect(ctx, x, y, w, h, fill, stroke) {
+        if (fill) {
+          ctx.fillStyle = fill;
+          ctx.fillRect(x, y, w, h);
+        }
+        if (stroke) {
+          ctx.strokeStyle = stroke;
+          ctx.strokeRect(x + 0.5, y + 0.5, w - 1, h - 1);
+        }
+      }
+      function darker(col, d = 40) {
+        const [r, g, b, a = 255] = col;
+        return `rgba(${Math.max(0, r - d)},${Math.max(0, g - d)},${Math.max(
+          0,
+          b - d
+        )},${a / 255})`;
+      }
+      function rgba(col) {
+        const [r, g, b, a = 255] = col;
+        return `rgba(${r},${g},${b},${a / 255})`;
+      }
+      function biasColor(rng, bright = true) {
+        if (bright) {
+          let r = rInt(rng, 120, 255),
+            g = rInt(rng, 40, 220),
+            b = rInt(rng, 40, 220);
+          const arr = [r, g, b]; // shuffle
+          for (let i = arr.length - 1; i > 0; i--) {
+            const j = Math.floor(rng() * (i + 1));
+            [arr[i], arr[j]] = [arr[j], arr[i]];
+          }
+          return arr;
+        } else {
+          const v = rInt(rng, 40, 100);
+          return [v, v, v, 255];
+        }
+      }
+
+      /* ---------- Vehicle Generator (rear view) ---------- */
+      function newCanvas(w, h) {
+        const c = document.createElement("canvas");
+        c.width = w;
+        c.height = h;
+        const ctx = c.getContext("2d", { willReadFrequently: false });
+        ctx.imageSmoothingEnabled = false;
+        return { canvas: c, ctx };
+      }
+
+      function pasteShadow(baseCtx, bbox, alpha = 0.28, offset = 1) {
+        const [sx, sy, sw, sh] = bbox;
+        baseCtx.save();
+        baseCtx.globalAlpha = alpha;
+        baseCtx.fillStyle = "black";
+        baseCtx.fillRect(sx + offset, sy + offset, sw, sh);
+        baseCtx.restore();
+      }
+
+      function gen_car(rng, scale) {
+        const gw = rInt(rng, 20, 26),
+          gh = rInt(rng, 16, 20);
+        const { canvas, ctx } = newCanvas(gw * scale, gh * scale);
+        ctx.scale(scale, scale);
+
+        const body = biasColor(rng, true);
+        const trim = biasColor(rng, false);
+        const glass = [170, 210, 230, 230];
+        const red = [230, 70, 70, 255];
+        const white = [240, 240, 220, 255];
+        const black = [30, 30, 30, 255];
+
+        const side_curve = pick(rng, [0, 1, 2]);
+        const roof_drop = rInt(rng, 0, 2);
+        const bumper_h = rInt(rng, 2, 3);
+        const tire_h = rInt(rng, 2, 3);
+
+        // bumper
+        drawRect(ctx, 1, gh - bumper_h, gw - 2, bumper_h, darker(body, 25));
+        // body
+        const body_h = gh - bumper_h - tire_h;
+        drawRect(ctx, 1, tire_h, gw - 2, body_h, rgba(body));
+        // tire hints
+        const tire_w = rInt(rng, 3, 5);
+        drawRect(ctx, 2, gh - tire_h, tire_w, tire_h, rgba(black));
+        drawRect(
+          ctx,
+          gw - 2 - tire_w,
+          gh - tire_h,
+          tire_w,
+          tire_h,
+          rgba(black)
+        );
+
+        // rear window
+        const win_w = gw - 6 - side_curve * 2;
+        const win_h = rInt(rng, 4, 6);
+        const win_x = 3 + side_curve;
+        const win_y = tire_h + 2 + roof_drop;
+        drawRect(ctx, win_x, win_y, win_w, win_h, rgba(glass));
+
+        // trunk seam
+        const trunk_y = tire_h + body_h - rInt(rng, 4, 6);
+        drawRect(ctx, 2, trunk_y, gw - 4, 1, rgba(trim));
+
+        // taillights
+        const lh_w = rInt(rng, 2, 3),
+          lh_h = rInt(rng, 2, 3);
+        const ly = gh - bumper_h - lh_h - 1;
+        drawRect(ctx, 2, ly, lh_w, lh_h, rgba(red));
+        drawRect(ctx, gw - 2 - lh_w, ly, lh_w, lh_h, rgba(red));
+
+        // reverse lights (small whites)
+        const rw = pick(rng, [1, 2]);
+        drawRect(ctx, Math.floor(gw / 2) - rw - 1, ly + 1, rw, 1, rgba(white));
+        drawRect(ctx, Math.floor(gw / 2) + 2, ly + 1, rw, 1, rgba(white));
+
+        // exhaust
+        if (rng() < 0.6) {
+          const ex_w = pick(rng, [1, 2]),
+            ex_h = 1;
+          const ex_x = pick(rng, [3, gw - 4 - ex_w]),
+            ex_y = gh - 1;
+          drawRect(ctx, ex_x, ex_y, ex_w, ex_h, rgba(trim));
+        }
+
+        // edge shades
+        const edge = darker(body, 30);
+        drawRect(ctx, 1, tire_h, gw - 2, 1, edge);
+        drawRect(ctx, 1, tire_h + body_h - 1, gw - 2, 1, edge);
+
+        pasteShadow(
+          ctx,
+          [2 * scale, (gh - 3) * scale, (gw - 4) * scale, 3 * scale],
+          0.24,
+          1
+        );
+
+        return { canvas, meta: { type: "car", gw, gh, body } };
+      }
+
+      function gen_pickup(rng, scale) {
+        const gw = rInt(rng, 22, 28),
+          gh = rInt(rng, 18, 22);
+        const { canvas, ctx } = newCanvas(gw * scale, gh * scale);
+        ctx.scale(scale, scale);
+
+        const body = biasColor(rng, true);
+        const trim = biasColor(rng, false);
+        const glass = [170, 210, 230, 230];
+        const red = [230, 70, 70, 255];
+        const white = [240, 240, 220, 255];
+        const black = [30, 30, 30, 255];
+
+        const bumper_h = rInt(rng, 2, 3);
+        const tire_h = rInt(rng, 2, 3);
+        const bed_h = rInt(rng, 3, 5);
+
+        drawRect(ctx, 1, gh - bumper_h, gw - 2, bumper_h, darker(body, 20));
+        const body_h = gh - bumper_h - tire_h;
+        drawRect(ctx, 1, tire_h, gw - 2, body_h, rgba(body));
+        drawRect(ctx, 3, tire_h + 2, gw - 6, bed_h, darker(body, 35));
+        drawRect(ctx, 5, tire_h + 2, gw - 10, 4, rgba(glass));
+
+        const tg_y = gh - bumper_h - rInt(rng, 4, 5);
+        drawRect(ctx, 2, tg_y, gw - 4, 1, rgba(trim));
+
+        const tire_w = rInt(rng, 3, 5);
+        drawRect(ctx, 2, gh - tire_h, tire_w, tire_h, "rgba(30,30,30,1)");
+        drawRect(
+          ctx,
+          gw - 2 - tire_w,
+          gh - tire_h,
+          tire_w,
+          tire_h,
+          "rgba(30,30,30,1)"
+        );
+
+        const lh_w = rInt(rng, 2, 3),
+          lh_h = rInt(rng, 2, 3),
+          ly = gh - bumper_h - lh_h - 1;
+        drawRect(ctx, 2, ly, lh_w, lh_h, rgba(red));
+        drawRect(ctx, gw - 2 - lh_w, ly, lh_w, lh_h, rgba(red));
+        const rw = pick(rng, [1, 2]),
+          rx = Math.floor(gw / 2) - rw;
+        drawRect(ctx, rx, ly + 1, rw, 1, rgba(white));
+
+        if (rng() < 0.4)
+          drawRect(ctx, Math.floor(gw / 2), gh - 1, 1, 1, rgba(trim));
+
+        pasteShadow(
+          ctx,
+          [2 * scale, (gh - 3) * scale, (gw - 4) * scale, 3 * scale],
+          0.24,
+          1
+        );
+        return { canvas, meta: { type: "pickup", gw, gh, body } };
+      }
+
+      function gen_van(rng, scale) {
+        const gw = rInt(rng, 20, 24),
+          gh = rInt(rng, 20, 24);
+        const { canvas, ctx } = newCanvas(gw * scale, gh * scale);
+        ctx.scale(scale, scale);
+
+        const body = biasColor(rng, true);
+        const trim = biasColor(rng, false);
+        const glass = [170, 210, 230, 230];
+        const red = [230, 70, 70, 255];
+        const black = [30, 30, 30, 255];
+
+        const bumper_h = 3,
+          tire_h = 2;
+        drawRect(ctx, 1, gh - bumper_h, gw - 2, bumper_h, darker(body, 25));
+        const body_h = gh - bumper_h - tire_h;
+        drawRect(ctx, 1, tire_h, gw - 2, body_h, rgba(body));
+
+        const win_w = gw - 6,
+          win_h = rInt(rng, 6, 8),
+          win_x = 3,
+          win_y = tire_h + 2;
+        drawRect(ctx, win_x, win_y, win_w, win_h, rgba(glass));
+        if (rng() < 0.7)
+          drawRect(
+            ctx,
+            win_x + Math.floor(win_w / 2),
+            win_y,
+            1,
+            win_h,
+            rgba(trim)
+          );
+
+        const lh_w = 2,
+          lh_h = 4,
+          ly = gh - bumper_h - lh_h - 1;
+        drawRect(ctx, 2, ly, lh_w, lh_h, rgba(red));
+        drawRect(ctx, gw - 2 - lh_w, ly, lh_w, lh_h, rgba(red));
+
+        drawRect(ctx, 3, gh - tire_h, 3, tire_h, "rgba(30,30,30,1)");
+        drawRect(ctx, gw - 6, gh - tire_h, 3, tire_h, "rgba(30,30,30,1)");
+
+        const seam_y = win_y + win_h + 1;
+        if (seam_y < gh - bumper_h - 1)
+          drawRect(ctx, 2, seam_y, gw - 4, 1, rgba(trim));
+
+        pasteShadow(
+          ctx,
+          [2 * scale, (gh - 3) * scale, (gw - 4) * scale, 3 * scale],
+          0.24,
+          1
+        );
+        return { canvas, meta: { type: "van", gw, gh, body } };
+      }
+
+      function gen_box_truck(rng, scale) {
+        const gw = rInt(rng, 22, 28),
+          gh = rInt(rng, 22, 28);
+        const { canvas, ctx } = newCanvas(gw * scale, gh * scale);
+        ctx.scale(scale, scale);
+
+        const body = biasColor(rng, false);
+        const cabMaybe = rng() < 0.4 ? biasColor(rng, true) : body;
+        const trim = biasColor(rng, false);
+        const red = [230, 70, 70, 255];
+        const amber = [250, 200, 120, 255];
+
+        const bumper_h = 3,
+          tire_h = 3;
+        drawRect(ctx, 1, gh - bumper_h, gw - 2, bumper_h, darker(cabMaybe, 25));
+        const box_h = gh - bumper_h - tire_h;
+        drawRect(ctx, 1, tire_h, gw - 2, box_h, rgba(body));
+
+        for (let i = 3; i < box_h - 2; i += 3)
+          drawRect(ctx, 2, tire_h + i, gw - 4, 1, rgba(trim));
+        drawRect(ctx, 2, tire_h + 1, 1, 1, rgba(amber));
+        drawRect(ctx, gw - 3, tire_h + 1, 1, 1, rgba(amber));
+
+        const lh_w = 2,
+          lh_h = 4,
+          ly = gh - bumper_h - lh_h - 1;
+        drawRect(ctx, 2, ly, lh_w, lh_h, rgba(red));
+        drawRect(ctx, gw - 2 - lh_w, ly, lh_w, lh_h, rgba(red));
+
+        const tw = 2;
+        for (const off of [2, 5]) {
+          drawRect(ctx, off, gh - tire_h, tw, tire_h, "rgba(30,30,30,1)");
+          drawRect(
+            ctx,
+            gw - off - tw,
+            gh - tire_h,
+            tw,
+            tire_h,
+            "rgba(30,30,30,1)"
+          );
+        }
+
+        const lp_w = 4,
+          lp_h = 2,
+          lp_x = Math.floor(gw / 2) - Math.floor(lp_w / 2),
+          lp_y = gh - bumper_h - lp_h - 1;
+        drawRect(ctx, lp_x, lp_y, lp_w, lp_h, "rgba(240,240,240,1)");
+
+        pasteShadow(
+          ctx,
+          [2 * scale, (gh - 4) * scale, (gw - 4) * scale, 4 * scale],
+          0.24,
+          1
+        );
+        return { canvas, meta: { type: "box_truck", gw, gh, body } };
+      }
+
+      const GENERATORS = {
+        car: gen_car,
+        pickup: gen_pickup,
+        van: gen_van,
+        box_truck: gen_box_truck,
+      };
+
+      /* ---------- Sheet assembly & UI ---------- */
+      function makeSheet(images) {
+        const maxW = Math.max(...images.map((im) => im.width));
+        const maxH = Math.max(...images.map((im) => im.height));
+        const cols = Math.min(8, images.length || 1);
+        const rows = Math.ceil(images.length / cols);
+        const sheet = document.getElementById("sheet");
+        sheet.width = maxW * cols;
+        sheet.height = maxH * rows;
+        const ctx = sheet.getContext("2d");
+        ctx.imageSmoothingEnabled = false;
+
+        images.forEach((im, i) => {
+          const cx = i % cols,
+            cy = Math.floor(i / cols);
+          // center each sprite into a cell
+          const ox = cx * maxW + Math.floor((maxW - im.width) / 2);
+          const oy = cy * maxH + Math.floor((maxH - im.height) / 2);
+          ctx.drawImage(im, ox, oy);
+        });
+
+        return { cell: [maxW, maxH], cols, rows, sheet };
+      }
+
+      function downloadBlob(blob, filename) {
+        const a = document.createElement("a");
+        a.href = URL.createObjectURL(blob);
+        a.download = filename;
+        a.click();
+        setTimeout(() => URL.revokeObjectURL(a.href), 1500);
+      }
+
+      async function generate() {
+        const count = parseInt(document.getElementById("count").value, 10);
+        const scale = parseInt(document.getElementById("scale").value, 10);
+        const seed = document.getElementById("seed").value.trim() || "seed";
+        const types = Array.from(
+          document.querySelectorAll(".type:checked")
+        ).map((el) => el.value);
+        if (!types.length) {
+          alert("Select at least one vehicle type.");
+          return;
+        }
+        const rng = seeded(seed);
+
+        const images = [];
+        const metas = [];
+        for (let i = 0; i < count; i++) {
+          const t = pick(rng, types);
+          const { canvas, meta } = GENERATORS[t](rng, scale);
+          images.push(canvas);
+          metas.push({
+            index: i,
+            type: meta.type,
+            gw: meta.gw,
+            gh: meta.gh,
+            body: meta.body,
+          });
+        }
+
+        const pack = makeSheet(images);
+        const meta = {
+          count,
+          types,
+          scale,
+          cell_size: { w: pack.cell[0], h: pack.cell[1] },
+          grid: { cols: pack.cols, rows: pack.rows },
+          sprites: metas,
+        };
+        document.getElementById("meta").textContent = JSON.stringify(
+          meta,
+          null,
+          2
+        );
+        // stash for downloads
+        window.__sheetForDownload = pack.sheet;
+        window.__metaForDownload = meta;
+      }
+
+      document.getElementById("generate").addEventListener("click", generate);
+
+      document.getElementById("dlSheet").addEventListener("click", () => {
+        const c = window.__sheetForDownload;
+        if (!c) {
+          alert("Generate first.");
+          return;
+        }
+        c.toBlob((blob) => downloadBlob(blob, "sprite_sheet.png"), "image/png");
+      });
+
+      document.getElementById("dlMeta").addEventListener("click", () => {
+        const meta = window.__metaForDownload;
+        if (!meta) {
+          alert("Generate first.");
+          return;
+        }
+        const blob = new Blob([JSON.stringify(meta, null, 2)], {
+          type: "application/json",
+        });
+        downloadBlob(blob, "metadata.json");
+      });
+
+      // initial generate
+      generate();
+    </script>
+  </body>
+</html>

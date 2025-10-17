@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useRef, useCallback } from "react";
 import sprites from "./sprites";
+import { seeded, GENERATORS } from "./procedural-sprites";
 
 const ParkingGame = () => {
   // Flicker configuration - EDIT THIS VALUE
@@ -98,19 +99,31 @@ const ParkingGame = () => {
 
       const config = getLevelConfig(level);
 
+      // Create RNG for this level
+      const rng = seeded(`level-${level}-sprites`);
+      const scale = 2;
+      const vehicleTypes = ['car', 'pickup', 'van', 'box_truck'];
+
+      // Helper function to generate a random vehicle sprite
+      const generateVehicleSprite = () => {
+        const typeIndex = Math.floor(rng() * vehicleTypes.length);
+        const type = vehicleTypes[typeIndex];
+        return GENERATORS[type](rng, scale);
+      };
+
       // Step 1: Initialize all rows with cars in parking lanes
       for (let i = 0; i < totalRows; i++) {
         const row = {
           index: i,
           leftSidewalk: null,
-          leftParking: "car",
+          leftParking: generateVehicleSprite(),
           lanes: [
-            Math.random() > 0.9 ? "car" : null,
-            Math.random() > 0.9 ? "car" : null,
-            Math.random() > 0.9 ? "car" : null,
-            Math.random() > 0.9 ? "car" : null,
+            Math.random() > 0.9 ? generateVehicleSprite() : null,
+            Math.random() > 0.9 ? generateVehicleSprite() : null,
+            Math.random() > 0.9 ? generateVehicleSprite() : null,
+            Math.random() > 0.9 ? generateVehicleSprite() : null,
           ],
-          rightParking: "car",
+          rightParking: generateVehicleSprite(),
           rightSidewalk: null,
         };
         rows.push(row);
@@ -133,10 +146,10 @@ const ParkingGame = () => {
       // Step 3: Seed parking spots based on level config
       const eligibleLeftRows = rows
         .map((row, idx) => idx)
-        .filter((idx) => rows[idx].leftParking === "car");
+        .filter((idx) => rows[idx].leftParking && typeof rows[idx].leftParking === "object");
       const eligibleRightRows = rows
         .map((row, idx) => idx)
-        .filter((idx) => rows[idx].rightParking === "car");
+        .filter((idx) => rows[idx].rightParking && typeof rows[idx].rightParking === "object");
 
       let spotsPlaced = 0;
       while (spotsPlaced < config.numSpots) {
@@ -292,27 +305,31 @@ const ParkingGame = () => {
       }
 
       // Render parking
-      if (row.leftParking === "car") {
-        sprites.car(ctx, getPerspectiveX(GRID.COL_LEFT_PARKING, scale), y, scale, spriteOpacity);
+      if (row.leftParking && typeof row.leftParking === "object") {
+        // It's a sprite object
+        sprites.car(ctx, getPerspectiveX(GRID.COL_LEFT_PARKING, scale), y, scale, spriteOpacity, row.leftParking);
       } else if (row.leftParking === "spot") {
         sprites.spot(ctx, getPerspectiveX(GRID.COL_LEFT_PARKING, scale), y, scale, spriteOpacity);
       }
 
-      if (row.rightParking === "car") {
-        sprites.car(ctx, getPerspectiveX(GRID.COL_RIGHT_PARKING, scale), y, scale, spriteOpacity);
+      if (row.rightParking && typeof row.rightParking === "object") {
+        // It's a sprite object
+        sprites.car(ctx, getPerspectiveX(GRID.COL_RIGHT_PARKING, scale), y, scale, spriteOpacity, row.rightParking);
       } else if (row.rightParking === "spot") {
         sprites.spot(ctx, getPerspectiveX(GRID.COL_RIGHT_PARKING, scale), y, scale, spriteOpacity);
       }
 
       // Render lane objects
       row.lanes.forEach((lane, laneIndex) => {
-        if (lane === "car") {
+        if (lane && typeof lane === "object") {
+          // It's a sprite object
           sprites.car(
             ctx,
             getPerspectiveX(GRID.COL_LANE_0 + laneIndex, scale),
             y,
             scale,
-            spriteOpacity
+            spriteOpacity,
+            lane
           );
         } else if (lane === "obstacle") {
           sprites.obstacle(
@@ -398,6 +415,23 @@ const ParkingGame = () => {
         "TIME'S UP!",
         CANVAS_WIDTH / 2 - 120,
         CANVAS_HEIGHT / 2 - 40
+      );
+    } else if (gameState.status === "CIRCLE_BLOCK") {
+      ctx.fillStyle = "rgba(156, 160, 137, 0.8)";
+      ctx.fillRect(0, UI_HEIGHT, CANVAS_WIDTH, CANVAS_HEIGHT - UI_HEIGHT);
+
+      ctx.fillStyle = "#000";
+      ctx.font = "bold 36px monospace";
+      ctx.fillText(
+        "CIRCLE THE BLOCK",
+        CANVAS_WIDTH / 2 - 180,
+        CANVAS_HEIGHT / 2 - 40
+      );
+      ctx.font = "bold 24px monospace";
+      ctx.fillText(
+        "and try again",
+        CANVAS_WIDTH / 2 - 90,
+        CANVAS_HEIGHT / 2 + 10
       );
     } else if (gameState.status === "SUCCESS") {
       ctx.fillStyle = "rgba(156, 160, 137, 0.9)";
@@ -516,7 +550,12 @@ const ParkingGame = () => {
           // Check bounds
           if (newState.worldRow < 0) newState.worldRow = 0;
           if (newState.worldRow >= prev.streetData.length) {
-            newState.status = "SUCCESS";
+            // Reached end of street - check if parked
+            if (prev.currentSpeed === "PARKED") {
+              newState.status = "SUCCESS";
+            } else {
+              newState.status = "CIRCLE_BLOCK";
+            }
             return newState;
           }
 
@@ -525,20 +564,20 @@ const ParkingGame = () => {
           if (currentRow) {
             // Check collision based on current lane
             if (prev.playerLane === -1) {
-              // In left parking column
-              if (currentRow.leftParking === "car") {
+              // In left parking column - check for sprite object or "car" string
+              if (currentRow.leftParking && typeof currentRow.leftParking === "object") {
                 newState.status = "CRASH";
                 return newState;
               }
             } else if (prev.playerLane === 4) {
-              // In right parking column
-              if (currentRow.rightParking === "car") {
+              // In right parking column - check for sprite object or "car" string
+              if (currentRow.rightParking && typeof currentRow.rightParking === "object") {
                 newState.status = "CRASH";
                 return newState;
               }
             } else {
-              // In driving lanes (0-3)
-              if (currentRow.lanes[prev.playerLane] === "car") {
+              // In driving lanes (0-3) - check for sprite object or "car" string
+              if (currentRow.lanes[prev.playerLane] && typeof currentRow.lanes[prev.playerLane] === "object") {
                 newState.status = "CRASH";
                 return newState;
               }
@@ -627,7 +666,8 @@ const ParkingGame = () => {
           return;
         } else if (
           gameState.status === "CRASH" ||
-          gameState.status === "TIMEOUT"
+          gameState.status === "TIMEOUT" ||
+          gameState.status === "CIRCLE_BLOCK"
         ) {
           // Lose a life and check if game over
           setGameState((prev) => {
@@ -735,7 +775,7 @@ const ParkingGame = () => {
                 const currentRow = prev.streetData[prev.worldRow];
                 if (
                   currentRow &&
-                  currentRow.lanes[newState.playerLane] === "car"
+                  currentRow.lanes[newState.playerLane] && typeof currentRow.lanes[newState.playerLane] === "object"
                 ) {
                   newState.status = "CRASH";
                 }
@@ -746,7 +786,7 @@ const ParkingGame = () => {
                 // Move into left parking column (lane -1)
                 newState.playerLane = -1;
                 const currentRow = prev.streetData[prev.worldRow];
-                if (currentRow && currentRow.leftParking === "car") {
+                if (currentRow && currentRow.leftParking && typeof currentRow.leftParking === "object") {
                   newState.status = "CRASH";
                 }
               }
@@ -758,7 +798,7 @@ const ParkingGame = () => {
                 const currentRow = prev.streetData[prev.worldRow];
                 if (
                   currentRow &&
-                  currentRow.lanes[newState.playerLane] === "car"
+                  currentRow.lanes[newState.playerLane] && typeof currentRow.lanes[newState.playerLane] === "object"
                 ) {
                   newState.status = "CRASH";
                 }
@@ -769,7 +809,7 @@ const ParkingGame = () => {
                 // Move into right parking column (lane 4)
                 newState.playerLane = 4;
                 const currentRow = prev.streetData[prev.worldRow];
-                if (currentRow && currentRow.rightParking === "car") {
+                if (currentRow && currentRow.rightParking && typeof currentRow.rightParking === "object") {
                   newState.status = "CRASH";
                 }
               }
@@ -794,7 +834,7 @@ const ParkingGame = () => {
                 const currentRow = prev.streetData[prev.worldRow];
                 if (
                   currentRow &&
-                  currentRow.lanes[newState.playerLane] === "car"
+                  currentRow.lanes[newState.playerLane] && typeof currentRow.lanes[newState.playerLane] === "object"
                 ) {
                   newState.status = "CRASH";
                 }
@@ -805,7 +845,7 @@ const ParkingGame = () => {
                 // Move into right parking column (lane 4)
                 newState.playerLane = 4;
                 const currentRow = prev.streetData[prev.worldRow];
-                if (currentRow && currentRow.rightParking === "car") {
+                if (currentRow && currentRow.rightParking && typeof currentRow.rightParking === "object") {
                   newState.status = "CRASH";
                 }
               }
@@ -817,7 +857,7 @@ const ParkingGame = () => {
                 const currentRow = prev.streetData[prev.worldRow];
                 if (
                   currentRow &&
-                  currentRow.lanes[newState.playerLane] === "car"
+                  currentRow.lanes[newState.playerLane] && typeof currentRow.lanes[newState.playerLane] === "object"
                 ) {
                   newState.status = "CRASH";
                 }
@@ -828,7 +868,7 @@ const ParkingGame = () => {
                 // Move into left parking column (lane -1)
                 newState.playerLane = -1;
                 const currentRow = prev.streetData[prev.worldRow];
-                if (currentRow && currentRow.leftParking === "car") {
+                if (currentRow && currentRow.leftParking && typeof currentRow.leftParking === "object") {
                   newState.status = "CRASH";
                 }
               }
