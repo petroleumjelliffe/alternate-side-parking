@@ -26,7 +26,7 @@ const ParkingGame = () => {
   const UI_HEIGHT = 60;
   const CANVAS_WIDTH = GRID.cellWidth * GRID.cols;
   const CANVAS_HEIGHT = GRID.cellHeight * GRID.visibleRows + UI_HEIGHT;
-  const LEVEL_LENGTH = 100; // Number of rows per level
+  const LEVEL_LENGTH = 30; // Number of rows per level
 
   // Speed configurations
   const SPEEDS = {
@@ -66,7 +66,7 @@ const ParkingGame = () => {
   // Game states: READY, PLAYING, SUCCESS, GAME_OVER
   const [gameState, setGameState] = useState({
     level: 1,
-    lives: 3,
+    rage: 0, // Rage meter: 0-4, game over at 4
     score: 0,
     totalScore: 0,
     time: 60,
@@ -85,6 +85,12 @@ const ParkingGame = () => {
   const touchStartX = useRef(null);
   const touchStartY = useRef(null);
   const lastMovementTime = useRef(0); // Track when sprites last moved for flicker
+
+  // Helper function to get rage meter display
+  const getRageDisplay = useCallback((rage) => {
+    const letters = ['F', '*', 'C', 'K'];
+    return letters.slice(0, rage).join('');
+  }, []);
 
   // Helper function to get level config (no dependencies, stable reference)
   const getLevelConfig = useCallback((level) => {
@@ -219,7 +225,8 @@ const ParkingGame = () => {
     ctx.fillStyle = "#000";
     ctx.font = "bold 18px monospace";
     ctx.fillText(`LVL: ${gameState.level}`, 20, 35);
-    ctx.fillText(`LIVES: ${gameState.lives}`, 120, 35);
+    const rageDisplay = getRageDisplay(gameState.rage);
+    ctx.fillText(`RAGE: ${rageDisplay}`, 120, 35);
     ctx.fillText(`TIME: ${Math.ceil(gameState.time)}`, 250, 35);
     ctx.fillText(`SPEED: ${SPEEDS[gameState.currentSpeed].name}`, 360, 35);
     ctx.fillText(`SCORE: ${gameState.totalScore}`, 480, 35);
@@ -513,6 +520,7 @@ const ParkingGame = () => {
     UI_HEIGHT,
     SPEEDS,
     getLevelConfig,
+    getRageDisplay,
     debugMode,
     debugValues,
     FLICKER_DURATION_MS,
@@ -669,21 +677,21 @@ const ParkingGame = () => {
           gameState.status === "TIMEOUT" ||
           gameState.status === "CIRCLE_BLOCK"
         ) {
-          // Lose a life and check if game over
+          // Increase rage meter and check if game over
           setGameState((prev) => {
-            const newLives = prev.lives - 1;
-            if (newLives <= 0) {
-              // Game over
+            const newRage = prev.rage + 1;
+            if (newRage >= 4) {
+              // Game over - rage meter full (F*CK complete)
               return {
                 ...prev,
-                lives: 0,
+                rage: 4,
                 status: "GAME_OVER",
               };
             } else {
-              // Restart current level with one less life
+              // Restart current level with increased rage
               return {
                 ...prev,
-                lives: newLives,
+                rage: newRage,
                 status: "READY",
                 streetData: generateLevel(prev.level),
               };
@@ -694,7 +702,7 @@ const ParkingGame = () => {
           // Restart entire game
           setGameState({
             level: 1,
-            lives: 3,
+            rage: 0,
             score: 0,
             totalScore: 0,
             time: 60,
